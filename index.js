@@ -112,15 +112,15 @@ app.post('/carteiras', verificarToken, async (req, res) => {
 // ROTAS DE TRANSAÇÕES
 // ==========================
 app.post('/transacoes', verificarToken, async (req, res) => {
-  const { descricao, valor, tipo, categoriaId, carteiraId, faturaId } = req.body;
+  const { descricao, valor, tipo, categoriaId, carteiraId, faturaId, carteiraDestinoId } = req.body;
   
   try {
     const transacao = await prisma.transacao.create({
-      data: { descricao, valor, tipo, categoriaId, carteiraId, faturaId }
+      data: { descricao, valor, tipo, categoriaId, carteiraId, faturaId, carteiraDestinoId }
     });
 
-    // Cenario A: Compra no Débito / Pix (Mexe na Carteira)
-    if (carteiraId && tipo !== 'PAGAMENTO_FATURA') {
+    // Cenario A: Compra/Receita no Débito ou Pix
+    if (carteiraId && tipo !== 'PAGAMENTO_FATURA' && tipo !== 'TRANSFERENCIA') {
       const operacao = tipo === 'RECEITA' ? { increment: valor } : { decrement: valor };
       await prisma.carteira.update({
         where: { id: carteiraId },
@@ -128,7 +128,7 @@ app.post('/transacoes', verificarToken, async (req, res) => {
       });
     }
 
-    // Cenario B: Compra no Cartão de Crédito (Aumenta o total da Fatura)
+    // Cenario B: Compra no Cartão de Crédito
     if (faturaId && tipo === 'DESPESA') {
       await prisma.fatura.update({
         where: { id: faturaId },
@@ -136,7 +136,7 @@ app.post('/transacoes', verificarToken, async (req, res) => {
       });
     }
 
-    // Cenario C: Pagamento da Fatura (Tira da Carteira e Marca Fatura como PAGA)
+    // Cenario C: Pagamento da Fatura
     if (tipo === 'PAGAMENTO_FATURA' && carteiraId && faturaId) {
       await prisma.carteira.update({
         where: { id: carteiraId },
@@ -146,6 +146,21 @@ app.post('/transacoes', verificarToken, async (req, res) => {
       await prisma.fatura.update({
         where: { id: faturaId },
         data: { status: 'PAGA' }
+      });
+    }
+
+    // Cenario D: Transferência entre Carteiras
+    if (tipo === 'TRANSFERENCIA' && carteiraId && carteiraDestinoId) {
+      // Tira da carteira de origem
+      await prisma.carteira.update({
+        where: { id: carteiraId },
+        data: { saldo: { decrement: valor } }
+      });
+
+      // Põe na carteira de destino
+      await prisma.carteira.update({
+        where: { id: carteiraDestinoId },
+        data: { saldo: { increment: valor } }
       });
     }
 
