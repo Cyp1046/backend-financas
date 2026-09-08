@@ -76,6 +76,25 @@ app.get('/categorias', verificarToken, async (req, res) => {
 });
 
 // ==========================
+// ROTA DE EDIÇÃO DE CATEGORIA (PUT)
+// ==========================
+app.put('/categorias/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { nome, icone } = req.body; 
+
+  try {
+    const categoriaAtualizada = await prisma.categoria.update({
+      where: { id: id },
+      data: { nome, icone }
+    });
+    
+    res.status(200).json(categoriaAtualizada);
+  } catch (erro) {
+    res.status(400).json({ erro: "Erro ao atualizar categoria", detalhe: erro.message });
+  }
+});
+
+// ==========================
 // ROTAS DE CONTAS
 // ==========================
 app.post('/contas', verificarToken, async (req, res) => {
@@ -85,6 +104,23 @@ app.post('/contas', verificarToken, async (req, res) => {
     res.status(201).json(conta);
   } catch (erro) {
     res.status(400).json({ erro: "Erro ao criar conta" });
+  }
+});
+
+// ==========================
+// ROTA DE EXCLUSÃO DE CONTA
+// ==========================
+app.delete('/contas/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await prisma.conta.delete({
+      where: { id: id }
+    });
+    
+    res.status(200).json({ mensagem: "Conta excluída com sucesso!" });
+  } catch (erro) {
+    res.status(400).json({ erro: "Erro ao excluir conta", detalhe: erro.message });
   }
 });
 
@@ -167,6 +203,35 @@ app.post('/transacoes', verificarToken, async (req, res) => {
     res.status(201).json(transacao);
   } catch (erro) {
     res.status(400).json({ erro: "Erro ao processar transação", detalhe: erro.message });
+  }
+});
+
+// ==========================
+// ROTA: ALTERAR CATEGORIA EM LOTE (BULK UPDATE)
+// ==========================
+app.put('/transacoes/lote/categoria', verificarToken, async (req, res) => {
+  const { transacoesIds, novaCategoriaId } = req.body;
+
+  if (!transacoesIds || !Array.isArray(transacoesIds) || !novaCategoriaId) {
+    return res.status(400).json({ erro: "Envie uma lista de 'transacoesIds' e o 'novaCategoriaId'." });
+  }
+
+  try {
+    const resultado = await prisma.transacao.updateMany({
+      where: {
+        id: { in: transacoesIds }
+      },
+      data: {
+        categoriaId: novaCategoriaId
+      }
+    });
+    
+    res.status(200).json({ 
+      mensagem: `${resultado.count} transação(ões) movida(s) para a nova categoria com sucesso!`,
+      quantidadeAtualizada: resultado.count
+    });
+  } catch (erro) {
+    res.status(400).json({ erro: "Erro ao atualizar em lote", detalhe: erro.message });
   }
 });
 
