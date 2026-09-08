@@ -6,52 +6,79 @@ const jwt = require('jsonwebtoken');
 const app = express();
 const prisma = new PrismaClient();
 const port = process.env.PORT || 3000;
-
-// O segredo do token (pegamos do Coolify ou usamos um padrão de segurança mínimo)
 const JWT_SECRET = process.env.JWT_SECRET || 'chave-secreta-temporaria-123';
 
 app.use(express.json());
 
-app.get('/health', (req, res) => {
-  res.status(200).send('OK');
-});
+// Rota de Healthcheck
+app.get('/health', (req, res) => res.status(200).send('OK'));
 
-// 1. Rota de Cadastro
+// ==========================
+// ROTAS DE AUTENTICAÇÃO
+// ==========================
 app.post('/auth/register', async (req, res) => {
   const { email, senha } = req.body;
   try {
     const hashSenha = await bcrypt.hash(senha, 10);
-    const usuario = await prisma.usuario.create({
-      data: { email, senha: hashSenha }
-    });
-    res.status(201).json({ sucesso: true, mensagem: "Usuário criado com sucesso!", id: usuario.id });
+    const usuario = await prisma.usuario.create({ data: { email, senha: hashSenha } });
+    res.status(201).json({ sucesso: true, id: usuario.id });
   } catch (erro) {
-    console.error(erro);
-    res.status(400).json({ sucesso: false, erro: "Falha ao criar usuário. O e-mail já existe?" });
+    res.status(400).json({ sucesso: false, erro: "Falha ao criar usuário." });
   }
 });
 
-// 2. Rota de Login
 app.post('/auth/login', async (req, res) => {
   const { email, senha } = req.body;
   try {
     const usuario = await prisma.usuario.findUnique({ where: { email } });
-    if (!usuario) {
-      return res.status(401).json({ sucesso: false, erro: "E-mail ou senha incorretos" });
+    if (!usuario || !(await bcrypt.compare(senha, usuario.senha))) {
+      return res.status(401).json({ sucesso: false, erro: "Credenciais inválidas" });
     }
-
-    const senhaValida = await bcrypt.compare(senha, usuario.senha);
-    if (!senhaValida) {
-      return res.status(401).json({ sucesso: false, erro: "E-mail ou senha incorretos" });
-    }
-
-    // Gera o token válido por 7 dias
     const token = jwt.sign({ id: usuario.id }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ sucesso: true, token });
   } catch (erro) {
-    console.error(erro);
-    res.status(500).json({ sucesso: false, erro: "Erro interno do servidor" });
+    res.status(500).json({ sucesso: false, erro: "Erro interno" });
   }
+});
+
+// ==========================
+// PORTEIRO (MIDDLEWARE)
+// ==========================
+const verificarToken = (req, res, next) => {
+  const token = req.headers['authorization'];
+  if (!token) return res.status(403).json({ erro: "Token não fornecido" });
+
+  // Remove a palavra "Bearer " se ela vier junto no cabeçalho
+  const tokenLimpo = token.replace('Bearer ', '');
+
+  jwt.verify(tokenLimpo, JWT_SECRET, (err, decoded) => {
+    if (err) return res.status(401).json({ erro: "Token inválido ou expirado" });
+    req.usuarioId = decoded.id; // Salva o ID do usuário para usar nas rotas
+    next();
+  });
+};
+
+// ==========================
+// ROTAS PROTEGIDAS (NEGÓCIO)
+// ==========================
+
+// Criar Categoria
+app.post('/categorias', verificarToken, async (req, res) => {
+  const { nome, icone } = req.body;
+  try {
+    const categoria = await prisma.categoria.create({
+      data: { nome, icone }
+    });
+    res.status(201).json(categoria);
+  } catch (erro) {
+    res.status(400).json({ erro: "Erro ao criar categoria" });
+  }
+});
+
+// Listar Categorias
+app.get('/categorias', verificarToken, async (req, res) => {
+  const categorias = await prisma.categoria.findMany();
+  res.json(categorias);
 });
 
 app.listen(port, '0.0.0.0', () => {
