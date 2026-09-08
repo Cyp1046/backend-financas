@@ -236,37 +236,6 @@ app.put('/transacoes/lote/categoria', verificarToken, async (req, res) => {
 });
 
 // ==========================
-// ROTAS DE FATURAS (Cartão de Crédito)
-// ==========================
-app.post('/faturas', verificarToken, async (req, res) => {
-  const { mesReferencia, dataVencimento, contaId } = req.body;
-  try {
-    const fatura = await prisma.fatura.create({
-      data: {
-        mesReferencia,
-        valorTotal: 0.00,
-        dataVencimento: new Date(dataVencimento),
-        status: 'ABERTA',
-        contaId
-      }
-    });
-    res.status(201).json(fatura);
-  } catch (erro) {
-    res.status(400).json({ erro: "Erro ao criar fatura", detalhe: erro.message });
-  }
-});
-
-app.get('/faturas', verificarToken, async (req, res) => {
-  const faturas = await prisma.fatura.findMany({ include: { transacoes: true } });
-  res.json(faturas);
-});
-
-// Inicia o servidor
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Servidor rodando na porta ${port}`);
-});
-
-// ==========================
 // ROTA: LISTAR TRANSAÇÕES (EXTRATO)
 // ==========================
 app.get('/transacoes', verificarToken, async (req, res) => {
@@ -358,4 +327,37 @@ app.delete('/transacoes/:id', verificarToken, async (req, res) => {
   } catch (erro) {
     res.status(400).json({ erro: "Erro ao excluir transação", detalhe: erro.message });
   }
+});
+
+// ==========================
+// ROTAS DE FATURAS (Cartão de Crédito)
+// ==========================
+app.post('/faturas', verificarToken, async (req, res) => {
+  const { mesReferencia, dataVencimento, contaId } = req.body;
+  try {
+    const fatura = await prisma.fatura.create({
+      data: {
+        mesReferencia,
+        valorTotal: 0.00,
+        dataVencimento: new Date(dataVencimento),
+        status: 'ABERTA',
+        contaId
+      }
+    });
+    res.status(201).json(fatura);
+  } catch (erro) {
+    res.status(400).json({ erro: "Erro ao criar fatura", detalhe: erro.message });
+  }
+});
+
+app.get('/faturas', verificarToken, async (req, res) => {
+  const faturas = await prisma.fatura.findMany({ include: { transacoes: true } });
+  res.json(faturas);
+});
+
+// ==========================
+// INICIA O SERVIDOR (Sempre no final!)
+// ==========================
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Servidor rodando na porta ${port}`);
 });
