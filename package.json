@@ -4,11 +4,12 @@
   "description": "API do app de finanças",
   "main": "index.js",
   "scripts": {
-  "build": "prisma generate",
-  "start": "npx prisma db push --accept-data-loss && node index.js"
-},
+    "build": "npx prisma generate",
+    "start": "npx prisma db push --accept-data-loss && node index.js"
+  },
   "dependencies": {
     "@prisma/client": "^5.x.x",
+    "prisma": "^5.x.x",
     "express": "^4.x.x",
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2"
