@@ -265,3 +265,97 @@ app.get('/faturas', verificarToken, async (req, res) => {
 app.listen(port, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${port}`);
 });
+
+// ==========================
+// ROTA: LISTAR TRANSAÇÕES (EXTRATO)
+// ==========================
+app.get('/transacoes', verificarToken, async (req, res) => {
+  const { carteiraId, faturaId } = req.query;
+
+  try {
+    const OndeFiltro = {};
+    if (carteiraId) OndeFiltro.carteiraId = carteiraId;
+    if (faturaId) OndeFiltro.faturaId = faturaId;
+
+    const transacoes = await prisma.transacao.findMany({
+      where: OndeFiltro,
+      orderBy: { data: 'desc' },
+      include: {
+        categoria: true,
+        carteira: true,
+        fatura: true
+      }
+    });
+
+    res.json(transacoes);
+  } catch (erro) {
+    res.status(500).json({ erro: "Erro ao buscar transações", detalhe: erro.message });
+  }
+});
+
+// ==========================
+// ROTA: DELETAR TRANSAÇÃO (COM ESTORNO AUTOMÁTICO)
+// ==========================
+app.delete('/transacoes/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const transacao = await prisma.transacao.findUnique({ where: { id } });
+
+    if (!transacao) {
+      return res.status(404).json({ erro: "Transação não encontrada." });
+    }
+
+    const { valor, tipo, carteiraId, faturaId, carteiraDestinoId } = transacao;
+
+    // 1. Estorno em Carteira Normal (Débito/Pix)
+    if (carteiraId && tipo !== 'PAGAMENTO_FATURA' && tipo !== 'TRANSFERENCIA') {
+      const operacaoEstorno = tipo === 'RECEITA' ? { decrement: valor } : { increment: valor };
+      await prisma.carteira.update({
+        where: { id: carteiraId },
+        data: { saldo: operacaoEstorno }
+      });
+    }
+
+    // 2. Estorno em Compras no Cartão de Crédito
+    if (faturaId && tipo === 'DESPESA') {
+      await prisma.fatura.update({
+        where: { id: faturaId },
+        data: { valorTotal: { decrement: valor } }
+      });
+    }
+
+    // 3. Estorno de Pagamento de Fatura
+    if (tipo === 'PAGAMENTO_FATURA' && carteiraId && faturaId) {
+      await prisma.carteira.update({
+        where: { id: carteiraId },
+        data: { saldo: { increment: valor } }
+      });
+
+      await prisma.fatura.update({
+        where: { id: faturaId },
+        data: { status: 'ABERTA' }
+      });
+    }
+
+    // 4. Estorno de Transferência entre Carteiras
+    if (tipo === 'TRANSFERENCIA' && carteiraId && carteiraDestinoId) {
+      await prisma.carteira.update({
+        where: { id: carteiraId },
+        data: { saldo: { increment: valor } }
+      });
+
+      await prisma.carteira.update({
+        where: { id: carteiraDestinoId },
+        data: { saldo: { decrement: valor } }
+      });
+    }
+
+    // Apaga a transação após reverter o saldo
+    await prisma.transacao.delete({ where: { id } });
+
+    res.json({ mensagem: "Transação excluída e saldos estornados com sucesso!" });
+  } catch (erro) {
+    res.status(400).json({ erro: "Erro ao excluir transação", detalhe: erro.message });
+  }
+});
