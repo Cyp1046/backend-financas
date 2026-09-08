@@ -112,19 +112,40 @@ app.post('/carteiras', verificarToken, async (req, res) => {
 // ROTAS DE TRANSAÇÕES
 // ==========================
 app.post('/transacoes', verificarToken, async (req, res) => {
-  const { descricao, valor, tipo, categoriaId, carteiraId } = req.body;
+  const { descricao, valor, tipo, categoriaId, carteiraId, faturaId } = req.body;
   
   try {
     const transacao = await prisma.transacao.create({
-      data: { descricao, valor, tipo, categoriaId, carteiraId }
+      data: { descricao, valor, tipo, categoriaId, carteiraId, faturaId }
     });
 
-    if (carteiraId) {
+    // Cenario A: Compra no Débito / Pix (Mexe na Carteira)
+    if (carteiraId && tipo !== 'PAGAMENTO_FATURA') {
       const operacao = tipo === 'RECEITA' ? { increment: valor } : { decrement: valor };
-      
       await prisma.carteira.update({
         where: { id: carteiraId },
         data: { saldo: operacao }
+      });
+    }
+
+    // Cenario B: Compra no Cartão de Crédito (Aumenta o total da Fatura)
+    if (faturaId && tipo === 'DESPESA') {
+      await prisma.fatura.update({
+        where: { id: faturaId },
+        data: { valorTotal: { increment: valor } }
+      });
+    }
+
+    // Cenario C: Pagamento da Fatura (Tira da Carteira e Marca Fatura como PAGA)
+    if (tipo === 'PAGAMENTO_FATURA' && carteiraId && faturaId) {
+      await prisma.carteira.update({
+        where: { id: carteiraId },
+        data: { saldo: { decrement: valor } }
+      });
+
+      await prisma.fatura.update({
+        where: { id: faturaId },
+        data: { status: 'PAGA' }
       });
     }
 
@@ -132,6 +153,32 @@ app.post('/transacoes', verificarToken, async (req, res) => {
   } catch (erro) {
     res.status(400).json({ erro: "Erro ao processar transação", detalhe: erro.message });
   }
+});
+
+// ==========================
+// ROTAS DE FATURAS (Cartão de Crédito)
+// ==========================
+app.post('/faturas', verificarToken, async (req, res) => {
+  const { mesReferencia, dataVencimento, contaId } = req.body;
+  try {
+    const fatura = await prisma.fatura.create({
+      data: {
+        mesReferencia,
+        valorTotal: 0.00,
+        dataVencimento: new Date(dataVencimento),
+        status: 'ABERTA',
+        contaId
+      }
+    });
+    res.status(201).json(fatura);
+  } catch (erro) {
+    res.status(400).json({ erro: "Erro ao criar fatura", detalhe: erro.message });
+  }
+});
+
+app.get('/faturas', verificarToken, async (req, res) => {
+  const faturas = await prisma.fatura.findMany({ include: { transacoes: true } });
+  res.json(faturas);
 });
 
 // Inicia o servidor
