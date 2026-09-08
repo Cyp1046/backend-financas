@@ -1,0 +1,15 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Vamos criar uma tabela básica de Teste para confirmar a conexão
+model TesteConexao {
+  id        Int      @id @default(autoincrement())
+  mensagem  String
+  criadoEm  DateTime @default(now())
+}
