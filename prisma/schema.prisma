@@ -1,15 +1,94 @@
 generator client {
-  provider = "prisma-client-js"
+provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+provider = "postgresql"
+url      = env("DATABASE_URL")
 }
 
-// Vamos criar uma tabela básica de Teste para confirmar a conexão
-model TesteConexao {
-  id        Int      @id @default(autoincrement())
-  mensagem  String
-  criadoEm  DateTime @default(now())
+// 1. Usuário (Base para autenticação e isolamento, mesmo sendo uso pessoal)
+model Usuario {
+id       String   @id @default(uuid())
+email    String   @unique
+senha    String
+criadoEm DateTime @default(now())
+}
+
+// 2. Categoria (Classificação obrigatória das despesas/receitas)
+model Categoria {
+id         String      @id @default(uuid())
+nome       String      @unique
+icone      String?
+
+transacoes Transacao[]
+}
+
+// 3. Conta (A Instituição Pai. Ex: Itaú, Nubank, Zoop/iFood Benefícios)
+model Conta {
+id          String     @id @default(uuid())
+nome        String
+
+instituicao String
+
+carteiras   Carteira[]
+faturas     Fatura[]
+
+}
+
+// 4. Carteira (Os sub-saldos reais. Resolve o iFood Benefícios e Investimentos)
+model Carteira {
+id                String      @id @default(uuid())
+nome              String      // Ex: "Refeição", "Conta Corrente", "CDB"
+tipo              String      // "CORRENTE", "BENEFICIO", "INVESTIMENTO"
+saldo             Decimal     @db.Decimal(10, 2)
+
+contaId           String
+conta             Conta       @relation(fields: [contaId], references: [id])
+
+// Relações para rastrear de onde o dinheiro sai e para onde vai
+saidas            Transacao[] @relation("CarteiraOrigem")
+entradas          Transacao[] @relation("CarteiraDestino")
+}
+
+// 5. Fatura (Agrupamento mensal do Cartão de Crédito)
+model Fatura {
+id             String      @id @default(uuid())
+mesReferencia  String      // Ex: "2026-09"
+valorTotal     Decimal     @db.Decimal(10, 2)
+dataVencimento DateTime
+status         String      // "ABERTA", "FECHADA", "PAGA"
+
+contaId        String
+conta          Conta       @relation(fields: [contaId], references: [id])
+
+transacoes     Transacao[]
+}
+
+// 6. Transação (O coração financeiro do sistema)
+model Transacao {
+id                String    @id @default(uuid())
+descricao         String
+
+valor             Decimal   @db.Decimal(10, 2)
+data              DateTime  @default(now())
+tipo              String    // "RECEITA", "DESPESA", "TRANSFERENCIA", "PAGAMENTO_FATURA"
+
+// O "Fio Condutor": Agrupa transações compostas (Ex: Pix -> Pagar Fatura)
+grupoOperacaoId   String?
+
+// A Regra de Ouro: Categoria é sempre obrigatória
+categoriaId       String
+categoria         Categoria @relation(fields: [categoriaId], references: [id])
+
+// ORIGEM: Da onde saiu o dinheiro (Débito/Pix sai da Carteira; Crédito entra na Fatura)
+carteiraId        String?
+carteira          Carteira? @relation("CarteiraOrigem", fields: [carteiraId], references: [id])
+
+faturaId          String?
+fatura            Fatura?   @relation(fields: [faturaId], references: [id])
+
+// DESTINO: Usado estritamente quando o tipo for "TRANSFERENCIA"
+carteiraDestinoId String?
+carteiraDestino   Carteira? @relation("CarteiraDestino", fields: [carteiraDestinoId], references: [id])
 }
